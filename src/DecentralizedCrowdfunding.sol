@@ -8,42 +8,6 @@ pragma solidity 0.8.30;
  * @notice This contract is designed for educational purposes and may not be suitable for production use without further testing and security audits.
  */
 contract DecentralizedCrowdfunding {
-    // ==================== Errors ====================
-    error GoalMustBeGreaterThanZero();
-    error DurationMustBeGreaterThanZero();
-    error fundCampaing_Should_graterThanzero();
-    error fundCampaing_DeadlingExpired();
-    error fundCampaing_State_is_Failed();
-    error fundCampaing_is_full();
-
-    // ==================== Events ====================
-    event CampaignCreated(
-        uint256 campaignId,
-        address indexed creator,
-        string title,
-        string description,
-        uint256 goal,
-        uint256 deadline
-    );
-
-    event CampaignFund(
-        uint256 campaignId,
-        address indexed sender,
-        uint256 amountSend
-    );
-
-    // ==================== state Varibales ====================
-
-    enum CampaignState {
-        Pending,
-        Active,
-        Successful,
-        Failed,
-        Refunded
-    }
-
-    Campaign[] public campaigns;
-
     // ==================== Struct ====================
     struct Campaign {
         address payable creator;
@@ -59,8 +23,77 @@ contract DecentralizedCrowdfunding {
         mapping(address => bool) hasVoted;
     }
 
+    // ==================== Errors ====================
+    error GoalMustBeGreaterThanZero();
+    error DurationMustBeGreaterThanZero();
+
+    error CampaingState_Invalid();
+
+    error fundCampaing_is_full();
+    error fundCampaing_Should_graterThanzero();
+    error fundCampaing_DeadlingExpired();
+
+    error finalizeCampaign_DeadlingExpired();
+
+    error voteForWithdrawal_Already_Voted();
+    error voteForWithdrawal_onlyContributions();
+
+    error refund_onlyContributions();
+
+    error Error_onlyCreator();
+
+    error WithdrawFunds_not_enough_votes();
+
+    // ==================== Events ====================
+    event CampaignCreated(
+        uint256 campaignId, address indexed creator, string title, string description, uint256 goal, uint256 deadline
+    );
+
+    event CampaignFund(uint256 campaignId, address indexed sender, uint256 amount);
+
+    event VoteCast(uint256 campaignId, address indexed sender);
+
+    event Refunded(uint256 campaignId, address indexed contributor, uint256 amount);
+
+    event CampaignFinalized(uint256 campaignId, CampaignState campaignState);
+
+    event WithdrawFunds(uint256 campaignId, address indexed creator, uint256 totalFunds);
+
+    // ====================  modifaiers ====================
+    modifier _atSatate(uint256 _campaignId, CampaignState _campaignState) {
+        if (campaigns[_campaignId].state != _campaignState) {
+            revert CampaingState_Invalid();
+        }
+        _;
+    }
+
+    modifier onlyCreator(uint256 _campaignId) {
+        if (campaigns[_campaignId].creator != msg.sender) {
+            revert Error_onlyCreator();
+        }
+        _;
+    }
+
+    // ==================== state Varibales ====================
+
+    enum CampaignState {
+        Pending,
+        Active,
+        Successful,
+        Failed,
+        Refunded
+    }
+
+    Campaign[] public campaigns;
+
     // ==================== external Functions ====================
 
+    /**
+     * @param _title is for set a Campaing Name
+     * @param _description is for set a Campaing Description
+     * @param _goal is for set a Campaing Goal
+     * @param _duration is for set a Campaing Duration
+     */
     function createCampaign(string memory _title, string memory _description, uint256 _goal, uint256 _duration)
         external
     {
@@ -83,7 +116,11 @@ contract DecentralizedCrowdfunding {
         emit CampaignCreated(campaigns.length - 1, msg.sender, _title, _description, _goal, newCapaign.deadline);
     }
 
-    function fundCampaign(uint256 _campaignID) external payable {
+    /**
+     * @notice Fund a specific campaign by its ID.
+     * @param _campaignID The ID of the campaign to fund.
+     */
+    function fundCampaign(uint256 _campaignID) external payable _atSatate(_campaignID, CampaignState.Active) {
         Campaign storage campaign = campaigns[_campaignID];
 
         if (msg.value <= 0) {
@@ -94,24 +131,99 @@ contract DecentralizedCrowdfunding {
             revert fundCampaing_DeadlingExpired();
         }
 
-        // state is faild
-        if (campaign.state != CampaignState.Failed) {
-            revert fundCampaing_State_is_Failed();
-        }
-
-        if(msg.value > campaign.goal){
+        if (msg.value > campaign.goal) {
             revert fundCampaing_is_full();
         }
 
-        if(campaign.contributions[msg.sender] == 0){
+        if (campaign.contributions[msg.sender] == 0) {
             campaign.contributors.push(msg.sender);
         }
 
         campaign.contributions[msg.sender] += msg.value;
         campaign.totalFunds += msg.value;
 
-        emit CampaignFund(_campaignID,msg.sender,msg.value);
+        emit CampaignFund(_campaignID, msg.sender, msg.value);
     }
 
-    
+    /**
+     * @notice Fund a specific campaign by its ID.
+     * @param _campaignID The ID of the campaign to fund.
+     * voted for withdraw fund from Campagn
+     */
+    function voteForWithdrawal(uint256 _campaignID) external _atSatate(_campaignID, CampaignState.Successful) {
+        Campaign storage campaign = campaigns[_campaignID];
+
+        if (campaign.hasVoted[msg.sender] == true) {
+            revert voteForWithdrawal_Already_Voted();
+        }
+
+        if (campaign.contributions[msg.sender] == 0) {
+            revert voteForWithdrawal_onlyContributions();
+        }
+
+        campaign.voteCount++;
+        campaign.hasVoted[msg.sender] = true;
+
+        emit VoteCast(_campaignID, msg.sender);
+    }
+
+    function refund(uint256 _campaignID) external _atSatate(_campaignID, CampaignState.Failed) {
+        Campaign storage campaign = campaigns[_campaignID];
+
+        uint256 contributed = campaign.contributions[msg.sender];
+
+        if (contributed == 0) {
+            revert refund_onlyContributions();
+        }
+
+        (bool success,) = payable(msg.sender).call{value: contributed}("");
+
+        require(success, "Refund failed");
+
+        campaign.contributions[msg.sender] = 0;
+
+        emit Refunded(_campaignID, msg.sender, contributed);
+    }
+
+    function finalizeCampaign(uint256 _campaignID) external _atSatate(_campaignID, CampaignState.Active) {
+        Campaign storage campaign = campaigns[_campaignID];
+
+        if (block.timestamp >= campaign.deadline) {
+            revert finalizeCampaign_DeadlingExpired();
+        }
+
+        if (campaign.totalFunds > campaign.goal) {
+            campaign.state = CampaignState.Successful;
+        } else {
+            campaign.state = CampaignState.Failed;
+        }
+
+        emit CampaignFinalized(_campaignID, campaign.state);
+    }
+
+    function withdrawFunds(uint256 _campaignID)
+        external
+
+        onlyCreator(_campaignID)
+
+        _atSatate(_campaignID, CampaignState.Successful)
+    {
+        Campaign storage campaign = campaigns[_campaignID];
+
+        if (campaign.voteCount * 2 >= campaign.contributors.length) {
+            revert WithdrawFunds_not_enough_votes();
+        }
+
+        uint256 amount = campaign.totalFunds;
+        campaign.totalFunds = 0;
+        campaign.state = CampaignState.Successful;
+
+        (bool success,) = campaign.creator.call{value: campaign.totalFunds}("");
+
+        require(success, "withdrawFunds failed");
+
+        emit WithdrawFunds(_campaignID,campaign.creator,amount);
+    }
+
+
 }
