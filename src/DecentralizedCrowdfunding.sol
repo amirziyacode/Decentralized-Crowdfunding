@@ -127,7 +127,7 @@ contract DecentralizedCrowdfunding {
             revert fundCampaing_Should_graterThanzero();
         }
 
-        if (campaign.deadline > block.timestamp) {
+        if (block.timestamp >= campaign.deadline) {
             revert fundCampaing_DeadlingExpired();
         }
 
@@ -146,7 +146,7 @@ contract DecentralizedCrowdfunding {
     }
 
     /**
-     * @notice Fund a specific campaign by its ID.
+     * @notice Vote a specific campaign by its ID.
      * @param _campaignID The ID of the campaign to fund.
      * voted for withdraw fund from Campagn
      */
@@ -167,6 +167,12 @@ contract DecentralizedCrowdfunding {
         emit VoteCast(_campaignID, msg.sender);
     }
 
+    
+    /**
+     * @notice Refund a specific campaign by its ID.
+     * @param _campaignID The ID of the campaign to fund.
+     * refund for contributors if the campaign is failed
+     */
     function refund(uint256 _campaignID) external _atSatate(_campaignID, CampaignState.Failed) {
         Campaign storage campaign = campaigns[_campaignID];
 
@@ -185,6 +191,11 @@ contract DecentralizedCrowdfunding {
         emit Refunded(_campaignID, msg.sender, contributed);
     }
 
+    /**
+     * @notice Finalize a specific campaign by its ID.
+     * @param _campaignID The ID of the campaign to fund.
+     * finalize the campaign and set the state to successful or failed
+     */
     function finalizeCampaign(uint256 _campaignID) external _atSatate(_campaignID, CampaignState.Active) {
         Campaign storage campaign = campaigns[_campaignID];
 
@@ -192,7 +203,7 @@ contract DecentralizedCrowdfunding {
             revert finalizeCampaign_DeadlingExpired();
         }
 
-        if (campaign.totalFunds > campaign.goal) {
+        if (campaign.totalFunds >= campaign.goal) {
             campaign.state = CampaignState.Successful;
         } else {
             campaign.state = CampaignState.Failed;
@@ -201,6 +212,11 @@ contract DecentralizedCrowdfunding {
         emit CampaignFinalized(_campaignID, campaign.state);
     }
 
+    /**
+     * @notice Withdraw funds from a specific campaign by its ID.
+     * @param _campaignID The ID of the campaign to fund.
+     * withdraw funds from the campaign if the campaign is successful and the creator has enough votes
+     */
     function withdrawFunds(uint256 _campaignID)
         external
 
@@ -224,6 +240,51 @@ contract DecentralizedCrowdfunding {
 
         emit WithdrawFunds(_campaignID,campaign.creator,amount);
     }
+    // ==================== Getter Functions ====================
+    function getCampaignLenght() public view returns(uint256 len){
+        return campaigns.length;
+    }
 
+    function getCampaign(uint256 _campaignID) public view returns(
+        address creator,
+        string memory title,
+        string memory description,
+        uint256 goal,
+        uint256 deadline,
+        uint256 totalFunds,
+        CampaignState state,
+        address[] memory contributors,
+        uint256 voteCount
+    ) {
+        Campaign storage campaign = campaigns[_campaignID];
+        return (
+            campaign.creator,
+            campaign.title,
+            campaign.description,
+            campaign.goal,
+            campaign.deadline,
+            campaign.totalFunds,
+            campaign.state,
+            campaign.contributors,
+            campaign.voteCount
+        );
+    }
 
+    function getContribution(uint256 _campaignID, address _contributor) public view returns (uint256) {
+        Campaign storage campaign = campaigns[_campaignID];
+        return campaign.contributions[_contributor];
+    }
+
+    // ==================== Setter Functions ====================
+    function setCampaignState(uint256 _campaignID,CampaignState _state) onlyCreator(_campaignID) external {
+        Campaign storage campaign = campaigns[_campaignID];
+
+        campaign.state = _state;
+
+    }
+
+    function setCampaignUserVoted(uint256 _campaignID,address _user) onlyCreator(_campaignID) external {
+        Campaign storage campaign = campaigns[_campaignID];
+        campaign.hasVoted[_user] = true;
+    }
 }
