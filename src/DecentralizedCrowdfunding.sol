@@ -167,7 +167,6 @@ contract DecentralizedCrowdfunding {
         emit VoteCast(_campaignID, msg.sender);
     }
 
-    
     /**
      * @notice Refund a specific campaign by its ID.
      * @param _campaignID The ID of the campaign to fund.
@@ -219,43 +218,47 @@ contract DecentralizedCrowdfunding {
      */
     function withdrawFunds(uint256 _campaignID)
         external
-
         onlyCreator(_campaignID)
-
         _atSatate(_campaignID, CampaignState.Successful)
     {
         Campaign storage campaign = campaigns[_campaignID];
 
-        if (campaign.voteCount * 2 >= campaign.contributors.length) {
+        if (campaign.voteCount * 2 <= campaign.contributors.length) {
             revert WithdrawFunds_not_enough_votes();
         }
 
+        (bool success,) = payable(campaign.creator).call{value: campaign.totalFunds}("");
+
         uint256 amount = campaign.totalFunds;
+
         campaign.totalFunds = 0;
         campaign.state = CampaignState.Successful;
 
-        (bool success,) = campaign.creator.call{value: campaign.totalFunds}("");
-
         require(success, "withdrawFunds failed");
 
-        emit WithdrawFunds(_campaignID,campaign.creator,amount);
+        emit WithdrawFunds(_campaignID, campaign.creator, amount);
     }
+
     // ==================== Getter Functions ====================
-    function getCampaignLenght() public view returns(uint256 len){
+    function getCampaignLenght() public view returns (uint256 len) {
         return campaigns.length;
     }
 
-    function getCampaign(uint256 _campaignID) public view returns(
-        address creator,
-        string memory title,
-        string memory description,
-        uint256 goal,
-        uint256 deadline,
-        uint256 totalFunds,
-        CampaignState state,
-        address[] memory contributors,
-        uint256 voteCount
-    ) {
+    function getCampaign(uint256 _campaignID)
+        public
+        view
+        returns (
+            address creator,
+            string memory title,
+            string memory description,
+            uint256 goal,
+            uint256 deadline,
+            uint256 totalFunds,
+            CampaignState state,
+            address[] memory contributors,
+            uint256 voteCount
+        )
+    {
         Campaign storage campaign = campaigns[_campaignID];
         return (
             campaign.creator,
@@ -275,15 +278,19 @@ contract DecentralizedCrowdfunding {
         return campaign.contributions[_contributor];
     }
 
+
+    function getIsVoted(uint256 _campaignID, address _voter) public view returns (bool) {
+        return campaigns[_campaignID].hasVoted[_voter];
+    }
+
     // ==================== Setter Functions ====================
-    function setCampaignState(uint256 _campaignID,CampaignState _state) onlyCreator(_campaignID) external {
+    function setCampaignState(uint256 _campaignID, CampaignState _state) external onlyCreator(_campaignID) {
         Campaign storage campaign = campaigns[_campaignID];
 
         campaign.state = _state;
-
     }
 
-    function setCampaignUserVoted(uint256 _campaignID,address _user) onlyCreator(_campaignID) external {
+    function setCampaignUserVoted(uint256 _campaignID, address _user) external onlyCreator(_campaignID) {
         Campaign storage campaign = campaigns[_campaignID];
         campaign.hasVoted[_user] = true;
     }
