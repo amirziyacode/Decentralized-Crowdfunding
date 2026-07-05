@@ -14,6 +14,12 @@ contract DecentralizedCrowdfundingTest is Test {
         vm.deal(user, 100 ether);
     }
 
+    modifier CreateCampaign() {
+        vm.prank(user);
+        crowdfunding.createCampaign("Test Campaign", "This is a test campaign", 100 ether, 1 days);
+        _;
+    }
+
     // ==================== CreateCampaign ====================
     function testCreateCampaign() public {
         vm.startPrank(user);
@@ -63,17 +69,14 @@ contract DecentralizedCrowdfundingTest is Test {
         crowdfunding.fundCampaign{value: 1 ether}(0);
     }
 
-    function test_SetStateOnlyOwner() public {
-        vm.prank(user);
-        crowdfunding.createCampaign("Test Campaign", "This is a test campaign", 100 ether, 1 days);
+    function test_SetStateOnlyOwner() public CreateCampaign(){
+
 
         vm.expectRevert(DecentralizedCrowdfunding.Error_onlyCreator.selector);
         crowdfunding.setCampaignState(0, DecentralizedCrowdfunding.CampaignState.Failed);
     }
 
-    function testFundCampaign_NotExpaired() public {
-        vm.prank(user);
-        crowdfunding.createCampaign("Test Campaign", "This is a test campaign", 100 ether, 1 days);
+    function testFundCampaign_NotExpaired() public CreateCampaign(){
 
         vm.warp(block.timestamp + (1 days * 1 days) + 1 seconds);
 
@@ -82,9 +85,8 @@ contract DecentralizedCrowdfundingTest is Test {
         crowdfunding.fundCampaign{value: 1 ether}(0);
     }
 
-    function testFundCampaing_revert_if_goal_is_full() public {
-        vm.prank(user);
-        crowdfunding.createCampaign("Test Campaign", "This is a test campaign", 100 ether, 1 days);
+    function testFundCampaing_revert_if_goal_is_full() public CreateCampaign(){
+
 
         vm.expectRevert(DecentralizedCrowdfunding.fundCampaing_is_full.selector);
 
@@ -105,6 +107,31 @@ contract DecentralizedCrowdfundingTest is Test {
         assertEq(contributors.length, 1);
         assertEq(contributors[0], user);
         assertEq(contribution, 50 ether);
+
+        vm.stopPrank();
+    }
+
+    function testFuzz_FundCampaign_withAnyFund(uint256 fund) public{
+        uint256 goal = 100 ether;
+
+        vm.startPrank(user);
+
+
+        crowdfunding.createCampaign("Test Campaign", "This is a test campaign", goal, 1 days);
+
+        vm.assume(fund > 0 && fund <= goal);
+
+        crowdfunding.fundCampaign{value:fund}(0);
+
+        (,,,,, uint256 totalFunded,, address[] memory contributors,) = crowdfunding.getCampaign(0);
+
+
+        uint256 contribution = crowdfunding.getContribution(0, user);
+
+        assertEq(totalFunded, fund);
+        assertEq(contributors.length, 1);
+        assertEq(contributors[0], user);
+        assertEq(contribution, fund);
 
         vm.stopPrank();
     }
@@ -152,10 +179,33 @@ contract DecentralizedCrowdfundingTest is Test {
         vm.stopPrank();
     }
 
+    function testFuzz_RefundCampaign_withAnyFund(uint256 fund) public{
+        uint256 goal = 100 ether;
+
+        vm.startPrank(user);
+
+        crowdfunding.createCampaign("Test Campaign", "This is a test campaign", goal, 1 days);
+
+        vm.assume(fund > 0 && fund <= goal);
+
+        crowdfunding.fundCampaign{value:fund}(0);
+
+        crowdfunding.setCampaignState(0, DecentralizedCrowdfunding.CampaignState.Failed);
+
+        uint256 balanceBeforeRefund = user.balance;
+
+        crowdfunding.refund(0);
+
+        uint256 balanceAfterRefund = user.balance;
+
+        assertEq(balanceAfterRefund - balanceBeforeRefund, fund);
+
+        vm.stopPrank();
+
+    }
+
     // ==================== finalizeCampaign ====================
-    function testFinalizeCampaign_DeadlingExpired() public {
-        vm.prank(user);
-        crowdfunding.createCampaign("Test Campaign", "This is a test campaign", 100 ether, 1 days);
+    function testFinalizeCampaign_DeadlingExpired() public CreateCampaign(){
 
         vm.warp(block.timestamp + (1 days * 1 days) + 1 seconds);
 
@@ -164,10 +214,7 @@ contract DecentralizedCrowdfundingTest is Test {
         crowdfunding.finalizeCampaign(0);
     }
 
-    function testfinalizeCampaign_SetState_Successful() public {
-        vm.prank(user);
-
-        crowdfunding.createCampaign("Test Campaign", "This is a test campaign", 100 ether, 1 days);
+    function testfinalizeCampaign_SetState_Successful() public CreateCampaign(){
 
         crowdfunding.fundCampaign{value: 100 ether}(0);
 
@@ -178,10 +225,7 @@ contract DecentralizedCrowdfundingTest is Test {
         assertEq(uint256(state), uint256(DecentralizedCrowdfunding.CampaignState.Successful));
     }
 
-    function testfinalizeCampaign_SetState_Failed() public {
-        vm.prank(user);
-
-        crowdfunding.createCampaign("Test Campaign", "This is a test campaign", 100 ether, 1 days);
+    function testfinalizeCampaign_SetState_Failed() public CreateCampaign(){
 
         crowdfunding.fundCampaign{value: 50 ether}(0);
 
@@ -220,16 +264,16 @@ contract DecentralizedCrowdfundingTest is Test {
         vm.stopPrank();
     }
 
-    function testVoteForWithdrawal_Success() public {
-        vm.startPrank(user);
+    function testVoteForWithdrawal_Success() public CreateCampaign(){
 
-        crowdfunding.createCampaign("Test Campaign", "This is a test campaign", 100 ether, 1 days);
-
+        vm.prank(user);
         // set Contribution for user
         crowdfunding.fundCampaign{value: 50 ether}(0);
 
+        vm.prank(user);
         crowdfunding.setCampaignState(0, DecentralizedCrowdfunding.CampaignState.Successful);
 
+        vm.prank(user);
         crowdfunding.voteForWithdrawal(0);
 
         (,,,,,,,, uint256 voteCount) = crowdfunding.getCampaign(0);
@@ -244,9 +288,7 @@ contract DecentralizedCrowdfundingTest is Test {
     }
 
     // ==================== voteForWithdrawal ====================
-    function testWithdrawFunds_NotOwner() public {
-        vm.prank(user);
-        crowdfunding.createCampaign("Test Campaign", "This is a test campaign", 100 ether, 1 days);
+    function testWithdrawFunds_NotOwner() public CreateCampaign(){
 
         vm.expectRevert(DecentralizedCrowdfunding.Error_onlyCreator.selector);
 
@@ -268,10 +310,7 @@ contract DecentralizedCrowdfundingTest is Test {
     }
 
     //  for withdraw we should have 50 % voter
-    function testWithdrawFunds_Success() public {
-
-        vm.prank(user);
-        crowdfunding.createCampaign("Test Campaign", "This is a test campaign", 100 ether, 1 days);
+    function testWithdrawFunds_Success() public CreateCampaign(){
 
         address invester = makeAddr("invester");
         vm.deal(invester, 100 ether);
@@ -331,9 +370,7 @@ contract DecentralizedCrowdfundingTest is Test {
     }
 
 
-    function testGet_IsVoted() public {
-        vm.prank(user);
-        crowdfunding.createCampaign("Test Campaign", "This is a test campaign", 100 ether, 1 days);
+    function testGet_IsVoted() public CreateCampaign(){
 
         vm.prank(user);
         bool checkVote  = crowdfunding.getIsVoted(0,user);
@@ -343,9 +380,7 @@ contract DecentralizedCrowdfundingTest is Test {
 
     // ==================== Setter ====================
 
-    function testSetCampaignState() public {
-        vm.prank(user);
-        crowdfunding.createCampaign("Test Campaign", "This is a test campaign", 100 ether, 1 days);
+    function testSetCampaignState() public CreateCampaign() {
 
         vm.prank(user);
         crowdfunding.setCampaignState(0,DecentralizedCrowdfunding.CampaignState.Successful);
@@ -357,9 +392,7 @@ contract DecentralizedCrowdfundingTest is Test {
 
 
 
-    function testGetCampaignByID() public {
-        vm.prank(user);
-        crowdfunding.createCampaign("Test Campaign", "This is a test campaign", 100 ether, 1 days);
+    function testGetCampaignByID() public CreateCampaign(){
 
         (address creator, string memory title, string memory description, uint256 goal, uint256 deadline,,,,) =
             crowdfunding.getCampaign(0);
