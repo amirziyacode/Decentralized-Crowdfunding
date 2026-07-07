@@ -33,7 +33,7 @@ contract DecentralizedCrowdfunding {
     error fundCampaing_Should_graterThanzero();
     error fundCampaing_DeadlingExpired();
 
-    error finalizeCampaign_DeadlingExpired();
+    error finalizeCampaign_DeadlineActive();
 
     error voteForWithdrawal_Already_Voted();
     error voteForWithdrawal_onlyContributions();
@@ -198,8 +198,8 @@ contract DecentralizedCrowdfunding {
     function finalizeCampaign(uint256 _campaignID) external _atSatate(_campaignID, CampaignState.Active) {
         Campaign storage campaign = campaigns[_campaignID];
 
-        if (block.timestamp >= campaign.deadline) {
-            revert finalizeCampaign_DeadlingExpired();
+        if (block.timestamp <= campaign.deadline) {
+            revert finalizeCampaign_DeadlineActive();
         }
 
         if (campaign.totalFunds >= campaign.goal) {
